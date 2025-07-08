@@ -1,78 +1,59 @@
 """
-LangGraph workflow for intelligent orchestration of Bigdata.com API search tools.
+Bigdata Search Agent Graph
 
-This module implements a comprehensive search workflow that automatically:
-1. Analyzes research topics and generates complementary search strategies
-2. Discovers relevant company entities using the knowledge graph
-3. Executes parallel searches across multiple Bigdata tools (news, transcripts, filings)
-4. Aggregates and synthesizes results into actionable insights
+This module implements a LangGraph-based workflow that orchestrates comprehensive financial research 
+using the Bigdata.com API ecosystem. The graph takes a research topic and automatically generates 
+multiple complementary search strategies, executes them in parallel, and compiles results into a 
+coherent research report.
 
-## Workflow Architecture
+## Core Workflow:
+1. **Planning Phase**: LLM analyzes the topic and generates multiple search strategies
+2. **Execution Phase**: Parallel execution of strategies using different Bigdata tools  
+3. **Compilation Phase**: LLM synthesizes all results into a final report
 
-The graph follows a 5-node pipeline with conditional routing:
+## Key Components:
 
-```
-START → generate_search_plan → execute_search_strategy → gather_search_results → compile_final_results → END
-                               ↑                       ↑
-                               │                       │
-                               └─ (parallel execution via Send() API)
-```
+### Workflow Nodes:
+- `generate_search_plan`: Creates search strategies using LLM analysis
+- `execute_search_strategy`: Executes individual strategies with appropriate Bigdata tools
+- `gather_search_results`: Aggregates results and calculates metadata
+- `compile_final_results`: Synthesizes findings into final report
 
-## Core Nodes
+### Tool Integration:
+Supports all major Bigdata.com tools:
+- News search, transcript search, filings search
+- Universal search, knowledge graph queries
+- Automatic parameter cleaning and validation
 
-- **generate_search_plan**: Uses LLM to create multiple search strategies covering different aspects
-  and time periods (news for recent events, transcripts for management insights, filings for financials)
+### Real-time Updates:
+- Streams progress updates throughout execution
+- Token-by-token streaming during LLM synthesis
+- Detailed performance and quality metrics
 
-- **execute_search_strategy**: Parallel execution node that selects appropriate Bigdata tools,
-  validates parameters, and executes searches with comprehensive error handling
+## Important Notes 
 
-- **gather_search_results**: Aggregates parallel results, calculates metadata, and performs
-  cross-strategy deduplication (when enabled)
+**State Management**: Uses BigdataSearchState with typed inputs/outputs for robust data flow
 
-- **compile_final_results**: LLM-powered synthesis that organizes findings by source type,
-  timeline, and actionable insights
+**Parallel Execution**: Leverages LangGraph's Send() API for concurrent strategy execution - 
+be careful when modifying the routing logic in `initiate_parallel_searches()`
 
-## Key Features
+**Parameter Handling**: `_clean_tool_parameters()` sanitizes tool inputs - extend this function 
+when adding new tool types or parameters
 
-- **Parallel Processing**: Concurrent execution of multiple search strategies using LangGraph's Send() API
-- **Smart Tool Selection**: Automatic routing to appropriate Bigdata tools based on strategy type
-- **Parameter Validation**: Robust cleaning and validation of LLM-generated tool parameters
-- **Error Resilience**: Comprehensive error handling with graceful degradation
-- **Rate Limiting**: Built-in delays and retry logic for API stability
+**Error Resilience**: Individual strategy failures don't crash the workflow - failed searches 
+are tracked in metadata and excluded from final compilation
 
-## Supported Search Tools
+**Configuration**: Highly configurable via BigdataSearchConfiguration - most behavior can be 
+tuned without code changes
 
-- **news**: Premium news content with multilingual support and source filtering
-- **transcripts**: Corporate earnings calls with section detection (Q&A, management discussion)
-- **filings**: SEC documents with fiscal period and filing type filtering  
-- **universal**: Cross-document search with unified ranking across all content types
-- **knowledge_graph**: Company and source discovery for targeted searches
+**Streaming**: Real-time updates are critical for UX - always use the stream writer when 
+adding new functionality
 
-## Usage
-
-```python
-from bigdata_search import bigdata_search_graph
-
-# Execute comprehensive search workflow
-result = await bigdata_search_graph.ainvoke(
-    {"topic": "Tesla Q4 2024 earnings results and outlook"},
-    config={"configurable": {"search_depth": 3, "max_results_per_strategy": 30}}
-)
-
-print(result["final_results"])  # Synthesized research summary
-```
-
-## Configuration
-
-Workflow behavior is controlled via BigdataSearchConfiguration:
-- search_depth: Number of complementary search strategies to generate
-- max_results_per_strategy: Results limit per individual search
-- bigdata_rate_limit_delay: API call throttling
-- LLM models for planning and synthesis
-
-The implementation follows existing LangGraph patterns for consistency with the broader
-open_deep_research module while providing specialized functionality for financial and
-business research using Bigdata's premium data sources.
+## Future Extension Points:
+- Add new tool types in `execute_search_strategy` tool_map
+- Extend parameter cleaning logic for new tool parameters  
+- Customize result compilation prompts in prompts.py
+- Add deduplication logic in `gather_search_results`
 """
 
 import time
@@ -89,7 +70,7 @@ from langgraph.constants import Send
 from langgraph.graph import START, END, StateGraph
 from langgraph.config import get_stream_writer
 
-from bigdata_search.state import (
+from .state import (
     BigdataSearchState,
     BigdataSearchStateInput,
     BigdataSearchStateOutput,
@@ -100,8 +81,8 @@ from bigdata_search.state import (
     SearchStrategyOutput,
 )
 
-from bigdata_search.configuration import BigdataSearchConfiguration
-from bigdata_search.prompts import (
+from .configuration import BigdataSearchConfiguration
+from .prompts import (
     search_plan_generator_instructions,
     result_compilation_instructions,
 )
@@ -325,7 +306,7 @@ async def execute_search_strategy(state: SearchStrategyState, config: RunnableCo
     configurable = BigdataSearchConfiguration.from_runnable_config(config)
     
     # Import tools dynamically
-    from bigdata_search.tools import (
+    from .tools import (
         bigdata_news_search,
         bigdata_transcript_search,
         bigdata_filings_search,
@@ -695,7 +676,8 @@ async def compile_final_results(state: BigdataSearchState, config: RunnableConfi
     This node:
     1. Takes all search results and entity discoveries
     2. Uses an LLM to synthesize them into a comprehensive report
-    3. Returns the final formatted results
+    3. Streams the LLM tokens as they're generated (when using messages stream mode)
+    4. Returns the final formatted results
     
     Args:
         state: Current state with all results and metadata
@@ -800,18 +782,24 @@ async def compile_final_results(state: BigdataSearchState, config: RunnableConfi
     
     writer({
         "type": "synthesis_start",
-        "message": "🧠 Starting LLM synthesis - generating comprehensive report..."
+        "message": "🧠 Starting LLM synthesis - streaming tokens as they generate..."
     })
     
-    # Compile final results
+    # Compile final results with streaming
     start_time = time.time()
-    final_results = await writer_model.ainvoke([
+    
+    # Stream the LLM response token by token
+    final_results_content = ""
+    async for chunk in writer_model.astream([
         SystemMessage(content=system_instructions),
         HumanMessage(content="Compile these search results into a comprehensive research summary.")
-    ])
+    ]):
+        if hasattr(chunk, 'content') and chunk.content:
+            final_results_content += chunk.content
+    
     synthesis_time = time.time() - start_time
     
-    report_length = len(final_results.content)
+    report_length = len(final_results_content)
     writer({
         "type": "synthesis_complete",
         "synthesis_time": synthesis_time,
@@ -820,8 +808,8 @@ async def compile_final_results(state: BigdataSearchState, config: RunnableConfi
     })
     
     # Stream final report statistics
-    report_lines = final_results.content.count('\n') + 1
-    estimated_words = len(final_results.content.split())
+    report_lines = final_results_content.count('\n') + 1
+    estimated_words = len(final_results_content.split())
     
     writer({
         "type": "report_stats",
@@ -830,6 +818,13 @@ async def compile_final_results(state: BigdataSearchState, config: RunnableConfi
         "estimated_words": estimated_words,
         "compression_ratio": report_length / total_content_length if total_content_length > 0 else 0,
         "message": f"📊 Final report: {estimated_words:,} words, {report_lines:,} lines"
+    })
+    
+    # Stream the clean markdown version
+    writer({
+        "type": "markdown_output",
+        "content": final_results_content,
+        "message": "📄 Clean markdown version ready"
     })
     
     writer({
@@ -841,7 +836,7 @@ async def compile_final_results(state: BigdataSearchState, config: RunnableConfi
         "message": f"🎉 Workflow complete! Research report generated for '{topic}'"
     })
     
-    return {"final_results": final_results.content}
+    return {"final_results": final_results_content}
 
 ## Routing Functions
 

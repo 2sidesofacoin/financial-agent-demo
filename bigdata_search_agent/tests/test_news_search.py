@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from test_config import TestConfig, TEST_QUERIES
-from bigdata_search.tools import bigdata_news_search
+from bigdata_search_agent.tools import bigdata_news_search
 
 # Rich imports for better table formatting
 try:

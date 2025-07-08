@@ -1,12 +1,125 @@
 """
-Core search utilities for Bigdata.com API.
+Core Search Utilities for Bigdata.com API Integration
 
-This module provides async search functions for all Bigdata document types:
-- News search with source filtering
-- Transcript search with section detection and speaker identification  
-- Filings search with SEC form types and reporting entity filtering
-- Universal search across all document types
-- Knowledge graph for entity and source discovery
+This module provides the foundational async search functions that directly interface with the 
+synchronous bigdata_client library. It acts as the async adapter layer, handling client 
+management, query construction, error recovery, and result standardization for all Bigdata.com 
+search capabilities.
+
+## Core Architecture:
+
+### Async Adapter Pattern:
+The bigdata_client library is synchronous, but our workflow requires async execution. This 
+module wraps all API calls using `asyncio.run_in_executor()` to execute them in thread pools 
+while maintaining async interfaces for the LangGraph workflow.
+
+### Client Management:
+- **Singleton Pattern**: Global `_bigdata_client` instance prevents authentication rate limiting
+- **Thread-Safe Access**: `_bigdata_client_lock` ensures safe concurrent access
+- **Auto-Recovery**: Automatic client reset on authentication errors
+- **Environment Config**: Credentials loaded from BIGDATA_USERNAME/BIGDATA_PASSWORD env vars
+
+### Query Construction:
+- **Hybrid Search**: Combines Similarity (semantic) + Keyword (exact) searches for best results
+- **Flexible Filtering**: Entity IDs, date ranges, document types, fiscal periods
+- **Query Composition**: Uses `&` (AND) and `|` (OR) operators to build complex queries
+- **Null Query Handling**: Supports entity-only or filter-only searches without text queries
+
+## Available Search Functions:
+
+### Content Search Functions:
+- **`bigdata_news_search_async`**: Premium news with source/entity filtering
+- **`bigdata_transcript_search_async`**: Corporate transcripts with section detection
+- **`bigdata_filings_search_async`**: SEC filings with form type filtering  
+- **`bigdata_universal_search_async`**: Cross-document unified search
+
+### Discovery Functions:
+- **`bigdata_knowledge_graph_async`**: Entity/source lookup for targeted filtering
+
+## Key Implementation Patterns:
+
+### Thread Pool Execution:
+All API calls use the pattern:
+```python
+loop = asyncio.get_event_loop()
+documents = await loop.run_in_executor(None, execute_search_function)
+```
+This ensures non-blocking execution while interfacing with synchronous APIs.
+
+### Error Handling Strategy:
+- **Authentication Recovery**: Automatic client reset on auth errors (token expiration)
+- **Graceful Degradation**: Individual query failures don't crash batch operations
+- **Rate Limiting**: Built-in delays between queries in the same batch
+- **Error Logging**: Detailed error messages for debugging API issues
+
+### Result Standardization:
+All search functions return consistent dictionary structures via `_format_search_results()`:
+- Document metadata (title, URL, timestamp, sentiment)
+- Content data (text, relevance scores, chunk indices)
+- Source information (name, credibility rank)
+- Entity relationships (mentioned entities, reporting entities)
+
+### Parameter Validation:
+- **Date Range Parsing**: Supports both rolling ("last_week") and absolute formats
+- **Type Mapping**: Converts string parameters to proper enum types
+- **Filter Composition**: Builds complex filter combinations from simple inputs
+- **Optional Parameters**: Graceful handling of None/missing parameters
+
+## Important Notes for Developers:
+
+**Thread Safety**: The global client instance uses async locks - always use `await get_bigdata_client()` 
+rather than accessing `_bigdata_client` directly
+
+**Rate Limiting**: Built-in 1-second delays between queries in batches - extend delay if hitting 
+rate limits frequently
+
+**Authentication**: Client automatically resets on auth errors, but ensure environment variables 
+are properly set before first use
+
+**Memory Management**: Large result sets are truncated to prevent memory issues - tune 
+`max_results` based on expected content volume
+
+**Query Performance**: Hybrid search (Similarity | Keyword) provides best results but may be 
+slower than pure keyword searches for simple queries
+
+**Entity Dependencies**: Content searches often require entity IDs from knowledge graph - 
+plan workflows accordingly
+
+## Extension Points:
+
+### Adding New Search Types:
+1. Create new async function following naming pattern: `bigdata_{type}_search_async`
+2. Implement query construction logic using existing patterns
+3. Use `_format_search_results()` for consistent output formatting
+4. Add corresponding tool wrapper in `tools.py`
+5. Update graph workflow tool_map if needed
+
+### Custom Filtering:
+- Extend parameter mapping dictionaries (e.g., `filing_type_map`)
+- Add new filter types to query construction logic
+- Update `_clean_tool_parameters()` in graph.py for validation
+
+### Result Enhancement:
+- Extend `_format_search_results()` to include additional metadata
+- Consider token limits when adding new content fields
+- Maintain backward compatibility with existing result structure
+
+## Performance Considerations:
+
+**Client Reuse**: The singleton pattern prevents repeated authentication overhead - don't create 
+multiple client instances
+
+**Batch Operations**: Multiple queries in a single call are more efficient than separate calls 
+due to connection reuse
+
+**Content Truncation**: Raw content is limited to prevent LLM token overflow - balance between 
+detail and performance
+
+**Async Efficiency**: Thread pool execution allows concurrent processing while respecting 
+API rate limits
+
+This module is the foundation for all Bigdata.com integration - changes here affect the entire 
+search workflow. Test thoroughly with real API calls when modifying core functions.
 """
 
 import os

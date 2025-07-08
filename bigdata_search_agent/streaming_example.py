@@ -5,10 +5,12 @@ This example shows how to:
 1. Use multiple stream modes for comprehensive progress monitoring
 2. Display live progress indicators and ASCII dashboards
 3. Show real-time API execution status and performance metrics
-4. Stream token-by-token report generation
+4. Stream token-by-token report generation using LangGraph messages mode
+5. Combine custom events with LLM token streaming (default behavior)
 
 Usage:
-    python -m bigdata_search.streaming_example
+    python -m bigdata_search_agent.streaming_example
+    python -m bigdata_search_agent.streaming_example --debug
 """
 
 import asyncio
@@ -34,7 +36,7 @@ logging.getLogger('google').setLevel(logging.ERROR)
 logging.getLogger('google.auth').setLevel(logging.ERROR)
 logging.getLogger('google.generativeai').setLevel(logging.ERROR)
 
-from bigdata_search import (
+from bigdata_search_agent import (
     bigdata_search_graph,
     BigdataSearchConfiguration,
 )
@@ -72,11 +74,13 @@ class StreamingProgressMonitor:
             console=self.console
         )
         self.overall_task = None
+        self.streaming_tokens = ""  # Store streaming tokens
+        self.streaming_active = False
         
     def print_header(self):
         """Print beautiful Rich header."""
         header_text = Text("🔍 BIGDATA INTERACTIVE SEARCH WORKFLOW", style="bold cyan")
-        subtitle_text = Text("Real-time streaming demonstration", style="italic")
+        subtitle_text = Text("Real-time dual streaming demonstration", style="italic")
         
         header_panel = Panel(
             Text.assemble(header_text, "\n", subtitle_text),
@@ -99,53 +103,79 @@ class StreamingProgressMonitor:
         """Stop the Rich progress bar."""
         self.progress.stop()
         
+    def start_token_streaming(self):
+        """Start streaming token display."""
+        self.streaming_active = True
+        self.streaming_tokens = ""
+        self.console.print("\n🔄 Starting LLM token streaming...", style="bold blue")
+        
+    def add_streaming_token(self, token: str):
+        """Add a token to the streaming display."""
+        if self.streaming_active:
+            self.streaming_tokens += token
+            # Print token without newline for real-time effect
+            self.console.print(token, end="", style="green")
+            
+    def end_token_streaming(self):
+        """End token streaming and display clean markdown."""
+        if self.streaming_active:
+            self.streaming_active = False
+            self.console.print("\n\n✅ LLM streaming complete!", style="bold green")
+            
+            # Display the clean markdown version
+            if self.streaming_tokens:
+                markdown_panel = Panel(
+                    Markdown(self.streaming_tokens),
+                    title="📄 Clean Markdown Report",
+                    border_style="bright_green",
+                    padding=(1, 2)
+                )
+                self.console.print(markdown_panel)
+        
     def create_status_table(self):
-        """Create a Rich table for status dashboard."""
-        table = Table(title="📋 Workflow Status Dashboard", box=box.ROUNDED)
-        table.add_column("Stage", style="cyan", no_wrap=True)
+        """Create a status table for overall progress."""
+        table = Table(title="🔄 Workflow Progress", box=box.ROUNDED)
+        table.add_column("Phase", style="cyan", no_wrap=True)
         table.add_column("Status", style="magenta")
         
-        for stage, status in self.overall_progress.items():
-            table.add_row(stage.capitalize(), status)
-            
+        for phase, status in self.overall_progress.items():
+            table.add_row(phase.capitalize(), status)
+        
         return table
-    
+        
     def create_search_status_table(self):
-        """Create a Rich table for search execution status."""
+        """Create a table showing search status for each tool."""
         if not self.search_status:
             return None
             
-        table = Table(title="🔍 Search Execution Status", box=box.ROUNDED)
-        table.add_column("Tool Type", style="green", no_wrap=True)
-        table.add_column("Status", style="yellow")
+        table = Table(title="🔍 Search Status", box=box.ROUNDED)
+        table.add_column("Tool Type", style="yellow", no_wrap=True)
+        table.add_column("Status", style="green")
         
         for tool_type, status in self.search_status.items():
             table.add_row(tool_type.upper(), status)
-            
+        
         return table
         
     def print_status_dashboard(self):
-        """Print beautiful Rich status dashboard."""
+        """Print a comprehensive status dashboard."""
         status_table = self.create_status_table()
         search_table = self.create_search_status_table()
         
+        self.console.print(status_table)
         if search_table:
-            tables = Columns([status_table, search_table], equal=True, expand=True)
-            self.console.print(tables)
-        else:
-            self.console.print(status_table)
-        
-    def update_stage(self, stage: str, status: str):
-        """Update overall workflow stage status."""
-        if stage in self.overall_progress:
-            self.overall_progress[stage] = status
+            self.console.print(search_table)
             
+    def update_stage(self, stage: str, status: str):
+        """Update the status of a workflow stage."""
+        self.overall_progress[stage] = status
+        
     def update_search_status(self, tool_type: str, status: str):
-        """Update individual search status."""
+        """Update the status of a specific search tool."""
         self.search_status[tool_type] = status
         
     def print_message(self, message: str, style: str = "default"):
-        """Print a styled message using Rich."""
+        """Print a message with the given style."""
         self.console.print(message, style=style)
         
     def print_success(self, message: str):
@@ -158,11 +188,11 @@ class StreamingProgressMonitor:
         
     def print_info(self, message: str):
         """Print an info message."""
-        self.console.print(f"ℹ️  {message}", style="cyan")
+        self.console.print(f"ℹ️ {message}", style="bold blue")
         
     def print_warning(self, message: str):
         """Print a warning message."""
-        self.console.print(f"⚠️  {message}", style="yellow")
+        self.console.print(f"⚠️ {message}", style="bold yellow")
 
 async def handle_custom_stream(chunk, monitor):
     """Handle custom stream events with Rich formatting."""
@@ -360,14 +390,30 @@ Execution: {status_text}"""
         
     elif chunk_type == "synthesis_start":
         monitor.console.print(f"  {message}", style="magenta")
+        # Start token streaming display
+        monitor.start_token_streaming()
         
     elif chunk_type == "synthesis_complete":
         synthesis_time = chunk.get("synthesis_time", 0)
         report_length = chunk.get("report_length", 0)
         monitor.print_success(message.replace("✅ ", ""))
+        # End token streaming
+        monitor.end_token_streaming()
         
     elif chunk_type == "report_stats":
         monitor.console.print(f"  {message}", style="cyan")
+        
+    elif chunk_type == "markdown_output":
+        content = chunk.get("content", "")
+        if content and not monitor.streaming_active:
+            # Display markdown if not already shown during streaming
+            markdown_panel = Panel(
+                Markdown(content),
+                title="📄 Final Research Report",
+                border_style="bright_green",
+                padding=(1, 2)
+            )
+            monitor.console.print(markdown_panel)
         
     elif chunk_type == "workflow_complete":
         monitor.update_stage("compiling", "✅ Complete")
@@ -381,13 +427,24 @@ Execution: {status_text}"""
         )
         monitor.console.print(completion_panel)
 
+async def handle_message_stream(chunk, monitor):
+    """Handle LLM message stream tokens."""
+    if isinstance(chunk, tuple) and len(chunk) == 2:
+        message_chunk, metadata = chunk
+        
+        # Extract token from the message chunk
+        if hasattr(message_chunk, 'content') and message_chunk.content:
+            monitor.add_streaming_token(message_chunk.content)
+
 async def main(debug_mode=False):
-    """Run the interactive streaming workflow example."""
+    """Run the interactive streaming workflow example with dual streaming."""
     
     console = Console()
     
     if debug_mode:
         console.print("🐛 Debug mode enabled - detailed tool parameters will be shown", style="cyan")
+    
+    console.print("🔄 Dual streaming mode enabled - showing both custom events and LLM tokens", style="cyan")
     
     # Check if required environment variables are set
     if not os.environ.get("BIGDATA_USERNAME") or not os.environ.get("BIGDATA_PASSWORD"):
@@ -405,7 +462,7 @@ async def main(debug_mode=False):
     monitor.print_header()
     
     # Define the search topic
-    search_topic = "Give me a deep dive on Tesla's potential revenue impact by the hikes in Copper Prices that Trump just announced"
+    search_topic = "Write me a deep dive report on how demand for memory is expected to grow with the adoption of AI. I’m particularly interested in evaluating the impact on Micron."
     topic_panel = Panel(
         f"🎯 Research Topic: [bold cyan]{search_topic}[/bold cyan]",
         border_style="blue",
@@ -448,12 +505,13 @@ async def main(debug_mode=False):
     config_table.add_row("Rate Limit Delay", f"{config['configurable']['bigdata_rate_limit_delay']}s")
     config_table.add_row("Planner Model", f"{config['configurable']['planner_provider']}:{config['configurable']['planner_model']}")
     config_table.add_row("Writer Model", f"{config['configurable']['writer_provider']}:{config['configurable']['writer_model']}")
+    config_table.add_row("Streaming Mode", "🔄 Dual Stream (Default)")
     
     monitor.console.print(config_table)
     
     try:
         start_panel = Panel(
-            "🚀 Starting interactive streaming workflow...\n   Watch real-time progress below!",
+            "🚀 Starting interactive dual streaming workflow...\n   Watch real-time progress below!",
             title="🎬 Workflow Starting",
             border_style="bright_blue",
             padding=(1, 2)
@@ -463,41 +521,23 @@ async def main(debug_mode=False):
         # Start the Rich progress bar
         monitor.start_progress()
         
-        # Stream the workflow with custom stream mode
-        final_result = None
-        async for chunk in bigdata_search_graph.astream(
-            input_state, 
-            config=config,
-            stream_mode="custom"  # Use custom stream mode for our rich updates
-        ):
-            await handle_custom_stream(chunk, monitor)
-            
-            # Update progress display periodically
-            if chunk.get("type") in ["planning_complete", "gathering_complete", "synthesis_complete"]:
-                completed_steps = sum(1 for status in monitor.overall_progress.values() if "✅" in status)
-                monitor.update_progress(completed_steps)
-                monitor.print_status_dashboard()
+        # Use dual streaming mode by default: custom events AND LLM messages
+        monitor.console.print("\n🔄 Starting dual streaming mode...", style="bold cyan")
+        
+        # Create tasks for both streaming modes
+        custom_task = asyncio.create_task(stream_custom_events(input_state, config, monitor))
+        message_task = asyncio.create_task(stream_messages(input_state, config, monitor))
+        
+        # Run both tasks concurrently
+        await asyncio.gather(custom_task, message_task)
         
         # Stop the progress bar
         monitor.stop_progress()
         
-        # Get the final result using ainvoke to access the complete state
-        monitor.console.print("\n📄 Retrieving final research report...", style="bold yellow")
+        # Display final statistics
+        monitor.console.print("\n📊 Displaying final workflow statistics...", style="bold yellow")
         final_result = await bigdata_search_graph.ainvoke(input_state, config)
         
-        if "final_results" in final_result:
-            # Use Rich Markdown for beautiful report rendering
-            report_markdown = Markdown(final_result["final_results"])
-            
-            report_panel = Panel(
-                report_markdown,
-                title="📊 FINAL RESEARCH REPORT",
-                border_style="bright_green",
-                padding=(1, 2)
-            )
-            monitor.console.print(report_panel)
-        
-        # Display final statistics in a beautiful table
         if "source_metadata" in final_result:
             metadata = final_result["source_metadata"]
             
@@ -523,6 +563,7 @@ async def main(debug_mode=False):
         total_demo_time = time.time() - monitor.start_time
         success_panel = Panel(
             f"🎉 Interactive streaming workflow completed successfully!\n"
+            f"🔄 Streaming mode: Dual Stream (Default)\n"
             f"🕐 Total demo time: {total_demo_time:.1f} seconds",
             title="✨ Success",
             border_style="bright_green",
@@ -557,6 +598,30 @@ async def main(debug_mode=False):
         monitor.console.print("\n🔍 Detailed error traceback:", style="dim red")
         traceback.print_exc()
 
+async def stream_custom_events(input_state, config, monitor):
+    """Stream custom events."""
+    async for chunk in bigdata_search_graph.astream(
+        input_state, 
+        config=config,
+        stream_mode="custom"
+    ):
+        await handle_custom_stream(chunk, monitor)
+        
+        # Update progress display periodically
+        if chunk.get("type") in ["planning_complete", "gathering_complete", "synthesis_complete"]:
+            completed_steps = sum(1 for status in monitor.overall_progress.values() if "✅" in status)
+            monitor.update_progress(completed_steps)
+            monitor.print_status_dashboard()
+
+async def stream_messages(input_state, config, monitor):
+    """Stream LLM messages."""
+    async for chunk in bigdata_search_graph.astream(
+        input_state, 
+        config=config,
+        stream_mode="messages"
+    ):
+        await handle_message_stream(chunk, monitor)
+
 def run_streaming_example():
     """Synchronous wrapper for the async main function."""
     # Parse command line arguments
@@ -577,7 +642,7 @@ def run_streaming_example():
         demo_title += " (Debug Mode)"
     
     demo_panel = Panel(
-        "🎬 Starting Rich Streaming Demo\n   Press Ctrl+C to interrupt...",
+        "🎬 Starting Rich Streaming Demo with Dual Stream (Default)\n   Press Ctrl+C to interrupt...",
         title=demo_title,
         border_style="bright_cyan",
         padding=(1, 2)

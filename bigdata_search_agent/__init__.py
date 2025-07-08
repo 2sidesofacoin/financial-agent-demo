@@ -8,7 +8,7 @@ This module provides:
 - Knowledge graph functionality for entity and source discovery
 """
 
-from bigdata_search.utils import (
+from .utils import (
     bigdata_news_search_async,
     bigdata_transcript_search_async,
     bigdata_filings_search_async,
@@ -16,7 +16,7 @@ from bigdata_search.utils import (
     bigdata_knowledge_graph_async,
 )
 
-from bigdata_search.tools import (
+from .tools import (
     bigdata_news_search,
     bigdata_transcript_search,
     bigdata_filings_search,
@@ -24,7 +24,7 @@ from bigdata_search.tools import (
     bigdata_knowledge_graph,
 )
 
-from bigdata_search.state import (
+from .state import (
     SearchStrategy,
     SearchStrategies,
     SearchResult,
@@ -35,12 +35,12 @@ from bigdata_search.state import (
     SearchStrategyOutput,
 )
 
-from bigdata_search.configuration import (
+from .configuration import (
     BigdataSearchConfiguration,
     BigdataToolType,
 )
 
-from bigdata_search.graph import (
+from .graph import (
     bigdata_search_graph,
     generate_search_plan,
     execute_search_strategy,

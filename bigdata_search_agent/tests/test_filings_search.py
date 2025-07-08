@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Transcript Search Tests for Bigdata Search Tools
+Filings Search Tests for Bigdata Search Tools
 
-Tests 8 key transcript search scenarios:
+Tests 8 key filings search scenarios:
 1. Entity ID + Date Range
 2. Entity ID + Fiscal Quarters  
-3. Entity ID + Similarity (Tesla Inc + what was mentioned about sales guidance)
-4. Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1)
-5. Entity ID + Similarity + Section (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1 + QA)
-6. Reporting Entity ID + Similarity (Tesla Inc + What guidance did Elon give around EVs)
-7. Similarity Only (What did companies say about Tesla's sales guidance)
-8. Similarity Only + Date Range (What did companies say about Tesla's sales guidance + last 90 days)
+3. Entity ID + Similarity (Tesla Inc + what was mentioned about EV strategy)
+4. Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did management say about production targets + FY2024 Q3)
+5. Entity ID + Similarity + Filing Type (Tesla Inc + what did management say about production targets + SEC_10_Q)
+6. Reporting Entity ID + Similarity (Tesla Inc + What guidance did Tesla provide about autonomous driving)
+7. Similarity Only (What did companies say about Tesla's competitive position)
+8. Similarity Only + Date Range (What did companies say about Tesla's competitive position + last 90 days)
 """
 
 import asyncio
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from test_config import TestConfig, TEST_QUERIES
-from bigdata_search.tools import bigdata_transcript_search
+from bigdata_search_agent.tools import bigdata_filings_search
 
 # Rich imports for better table formatting
 try:
@@ -35,8 +35,8 @@ except ImportError:
     RICH_AVAILABLE = False
     print("Rich not available. Install with: pip install rich")
 
-class TranscriptSearchTester:
-    """Test suite for transcript search functionality."""
+class FilingsSearchTester:
+    """Test suite for filings search functionality."""
     
     def __init__(self):
         self.config = TestConfig()
@@ -75,23 +75,25 @@ class TranscriptSearchTester:
         date_range = "last_90_days"
         
         try:
-            print(f"\n🔍 Searching Tesla transcripts for date range: {date_range}")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching Tesla filings for date range: {date_range}")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [""],  # Empty query - pure entity + date filtering
                 "max_results": 3,
                 "entity_ids": [self.test_entity_id],
                 "date_range": date_range
             })
             
-            print(f"✅ Found results for {date_range}")
-            
             # Extract key info for table display
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            # Store actual query and parameters used
-            self.results.append(("entity_date", f"entity:{self.test_entity_id} + date:{date_range}", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} results for {date_range}")
+                self.results.append(("entity_date", f"entity:{self.test_entity_id} + date:{date_range}", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No results found for {date_range}")
+                self.results.append(("entity_date", f"entity:{self.test_entity_id} + date:{date_range}", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error with date range {date_range}: {str(e)}")
@@ -108,8 +110,8 @@ class TranscriptSearchTester:
         period_str = f"FY{fiscal_year}Q{fiscal_quarter}"
         
         try:
-            print(f"\n🔍 Searching Tesla transcripts for {period_str}")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching Tesla filings for {period_str}")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [""],  # Empty query - pure entity + fiscal filtering
                 "max_results": 3,
                 "entity_ids": [self.test_entity_id],
@@ -117,194 +119,212 @@ class TranscriptSearchTester:
                 "fiscal_quarter": fiscal_quarter
             })
             
-            print(f"✅ Found results for {period_str}")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("entity_fiscal", f"entity:{self.test_entity_id} + {period_str}", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} results for {period_str}")
+                self.results.append(("entity_fiscal", f"entity:{self.test_entity_id} + {period_str}", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No results found for {period_str}")
+                self.results.append(("entity_fiscal", f"entity:{self.test_entity_id} + {period_str}", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error with fiscal period {period_str}: {str(e)}")
             self.results.append(("entity_fiscal", f"entity:{self.test_entity_id} + {period_str}", "error", 0, "N/A", str(e)[:100]))
     
     async def test_3_entity_id_plus_similarity(self):
-        """Test 3: Entity ID + Similarity (Tesla Inc + what was mentioned about sales guidance)"""
-        print("\n🎯 Test 3: Entity ID + Similarity (Tesla Inc + what was mentioned about sales guidance)")
+        """Test 3: Entity ID + Similarity (Tesla Inc + what was mentioned about EV strategy)"""
+        print("\n🎯 Test 3: Entity ID + Similarity (Tesla Inc + what was mentioned about EV strategy)")
         print("-" * 50)
         
         # Single test with one query
-        query = "what was mentioned about sales guidance"
+        query = "what was mentioned about EV strategy"
         
         try:
-            print(f"\n🔍 Searching Tesla transcripts for: '{query}'")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching Tesla filings for: '{query}'")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
                 "entity_ids": [self.test_entity_id],
-                "transcript_types": ["EARNINGS_CALL"]
+                "filing_types": ["SEC_10_K", "SEC_10_Q"]
             })
             
-            print(f"✅ Found results for '{query}'")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("entity_similarity", f"'{query}' + entity:{self.test_entity_id} + EARNINGS_CALL", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} results for '{query}'")
+                self.results.append(("entity_similarity", f"'{query}' + entity:{self.test_entity_id} + SEC_10_K/Q", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No results found for '{query}'")
+                self.results.append(("entity_similarity", f"'{query}' + entity:{self.test_entity_id} + SEC_10_K/Q", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error searching for '{query}': {str(e)}")
-            self.results.append(("entity_similarity", f"'{query}' + entity:{self.test_entity_id} + EARNINGS_CALL", "error", 0, "N/A", str(e)[:100]))
+            self.results.append(("entity_similarity", f"'{query}' + entity:{self.test_entity_id} + SEC_10_K/Q", "error", 0, "N/A", str(e)[:100]))
     
     async def test_4_entity_id_plus_similarity_plus_fiscal_quarter(self):
-        """Test 4: Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1)"""
-        print("\n📈 Test 4: Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1)")
+        """Test 4: Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did management say about production targets + FY2024 Q3)"""
+        print("\n📈 Test 4: Entity ID + Similarity + Fiscal Quarter (Tesla Inc + what did management say about production targets + FY2024 Q3)")
         print("-" * 50)
         
         # Single test with one query
-        query = "what did analysts ask about macro economic color"
+        query = "what did management say about production targets"
         
         try:
-            print(f"\n🔍 Searching Tesla FY2025Q1 transcripts for: '{query}'")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching Tesla FY2024Q3 filings for: '{query}'")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
                 "entity_ids": [self.test_entity_id],
-                "transcript_types": ["EARNINGS_CALL"],
-                "fiscal_year": 2025,
-                "fiscal_quarter": 1
+                "filing_types": ["SEC_10_Q"],
+                "fiscal_year": 2024,
+                "fiscal_quarter": 3
             })
             
-            print(f"✅ Found results for '{query}' in FY2025Q1")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("entity_similarity_fiscal", f"'{query}' + entity:{self.test_entity_id} + FY2025Q1", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} results for '{query}' in FY2024Q3")
+                self.results.append(("entity_similarity_fiscal", f"'{query}' + entity:{self.test_entity_id} + FY2024Q3", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No results found for '{query}' in FY2024Q3")
+                self.results.append(("entity_similarity_fiscal", f"'{query}' + entity:{self.test_entity_id} + FY2024Q3", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
-            print(f"❌ Error searching for '{query}' in FY2025Q1: {str(e)}")
-            self.results.append(("entity_similarity_fiscal", f"'{query}' + entity:{self.test_entity_id} + FY2025Q1", "error", 0, "N/A", str(e)[:100]))
+            print(f"❌ Error searching for '{query}' in FY2024Q3: {str(e)}")
+            self.results.append(("entity_similarity_fiscal", f"'{query}' + entity:{self.test_entity_id} + FY2024Q3", "error", 0, "N/A", str(e)[:100]))
     
-    async def test_5_entity_id_plus_similarity_plus_fiscal_quarter_plus_section(self):
-        """Test 5: Entity ID + Similarity + Section (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1 + QA)"""
-        print("\n❓ Test 5: Entity ID + Similarity + Section (Tesla Inc + what did analysts ask about macro economic color + FY2025 Q1 + QA)")
+    async def test_5_entity_id_plus_similarity_plus_filing_type(self):
+        """Test 5: Entity ID + Similarity + Filing Type (Tesla Inc + what did management say about production targets + SEC_10_Q)"""
+        print("\n📄 Test 5: Entity ID + Similarity + Filing Type (Tesla Inc + what did management say about production targets + SEC_10_Q)")
         print("-" * 50)
         
         # Single test with one query
-        query = "what did analysts ask about macro economic color"
+        query = "what did management say about production targets"
         
         try:
-            print(f"\n🔍 Searching Tesla FY2025Q1 Q&A sections for: '{query}'")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching Tesla SEC_10_Q filings for: '{query}'")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
                 "entity_ids": [self.test_entity_id],
-                "transcript_types": ["EARNINGS_CALL"],
-                "fiscal_year": 2025,
-                "fiscal_quarter": 1,
-                "section_metadata": ["QA"]
+                "filing_types": ["SEC_10_Q"]
             })
             
-            print(f"✅ Found Q&A results for '{query}' in FY2025Q1")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("entity_similarity_fiscal_section", f"'{query}' + entity:{self.test_entity_id} + FY2025Q1 + QA", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} SEC_10_Q results for '{query}'")
+                self.results.append(("entity_similarity_filing_type", f"'{query}' + entity:{self.test_entity_id} + SEC_10_Q", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No SEC_10_Q results found for '{query}'")
+                self.results.append(("entity_similarity_filing_type", f"'{query}' + entity:{self.test_entity_id} + SEC_10_Q", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
-            print(f"❌ Error searching Q&A for '{query}' in FY2025Q1: {str(e)}")
-            self.results.append(("entity_similarity_fiscal_section", f"'{query}' + entity:{self.test_entity_id} + FY2025Q1 + QA", "error", 0, "N/A", str(e)[:100]))
+            print(f"❌ Error searching SEC_10_Q for '{query}': {str(e)}")
+            self.results.append(("entity_similarity_filing_type", f"'{query}' + entity:{self.test_entity_id} + SEC_10_Q", "error", 0, "N/A", str(e)[:100]))
     
     async def test_6_reporting_entity_id_plus_similarity(self):
-        """Test 6: Reporting Entity ID + Similarity (Tesla Inc + What guidance did Elon give around EVs)"""
-        print("\n🏢 Test 6: Reporting Entity ID + Similarity (Tesla Inc + What guidance did Elon give around EVs)")
+        """Test 6: Reporting Entity ID + Similarity (Tesla Inc + What guidance did Tesla provide about autonomous driving)"""
+        print("\n🏢 Test 6: Reporting Entity ID + Similarity (Tesla Inc + What guidance did Tesla provide about autonomous driving)")
         print("-" * 50)
         
         # Single test with one query
-        query = "What guidance did Elon give around EVs"
+        query = "What guidance did Tesla provide about autonomous driving"
         
         try:
-            print(f"\n🔍 Searching transcripts filed by Tesla for: '{query}'")
-            result = await bigdata_transcript_search.ainvoke({
+            print(f"\n🔍 Searching filings filed by Tesla for: '{query}'")
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
-                "reporting_entity_ids": [self.test_entity_id],  # Use reporting_entity_ids for transcripts filed BY Tesla
-                "transcript_types": ["EARNINGS_CALL"]
+                "reporting_entity_ids": [self.test_entity_id],  # Use reporting_entity_ids for filings filed BY Tesla
+                "filing_types": ["SEC_10_K", "SEC_10_Q"]
             })
             
-            print(f"✅ Found reporting entity results for '{query}'")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("reporting_entity_similarity", f"'{query}' + reporting_entity:{self.test_entity_id} + EARNINGS_CALL", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} reporting entity results for '{query}'")
+                self.results.append(("reporting_entity_similarity", f"'{query}' + reporting_entity:{self.test_entity_id} + SEC_10_K/Q", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No reporting entity results found for '{query}'")
+                self.results.append(("reporting_entity_similarity", f"'{query}' + reporting_entity:{self.test_entity_id} + SEC_10_K/Q", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error with reporting entity search for '{query}': {str(e)}")
-            self.results.append(("reporting_entity_similarity", f"'{query}' + reporting_entity:{self.test_entity_id} + EARNINGS_CALL", "error", 0, "N/A", str(e)[:100]))
+            self.results.append(("reporting_entity_similarity", f"'{query}' + reporting_entity:{self.test_entity_id} + SEC_10_K/Q", "error", 0, "N/A", str(e)[:100]))
     
     async def test_7_similarity_only(self):
-        """Test 7: Similarity Only (What did companies say about Tesla's sales guidance)"""
-        print("\n🔍 Test 7: Similarity Only (What did companies say about Tesla's sales guidance)")
+        """Test 7: Similarity Only (What did companies say about Tesla's competitive position)"""
+        print("\n🔍 Test 7: Similarity Only (What did companies say about Tesla's competitive position)")
         print("-" * 50)
         
         # Single test with one query
-        query = "What did companies say about Tesla's sales guidance"
+        query = "What did companies say about Tesla's competitive position"
         
         try:
             print(f"\n🔍 Open search for: '{query}'")
-            result = await bigdata_transcript_search.ainvoke({
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
-                "transcript_types": ["EARNINGS_CALL"]
+                "filing_types": ["SEC_10_K", "SEC_10_Q"]
                 # No entity_ids - let the query find Tesla mentions naturally
             })
             
-            print(f"✅ Found open search results for '{query}'")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("similarity_only", f"'{query}' (no entity filter)", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} open search results for '{query}'")
+                self.results.append(("similarity_only", f"'{query}' (no entity filter)", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No open search results found for '{query}'")
+                self.results.append(("similarity_only", f"'{query}' (no entity filter)", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error with open search for '{query}': {str(e)}")
             self.results.append(("similarity_only", f"'{query}' (no entity filter)", "error", 0, "N/A", str(e)[:100]))
     
     async def test_8_similarity_only_plus_date_range(self):
-        """Test 8: Similarity Only + Date Range (What did companies say about Tesla's sales guidance + last 90 days)"""
-        print("\n📅 Test 8: Similarity Only + Date Range (What did companies say about Tesla's sales guidance + last 90 days)")
+        """Test 8: Similarity Only + Date Range (What did companies say about Tesla's competitive position + last 90 days)"""
+        print("\n📅 Test 8: Similarity Only + Date Range (What did companies say about Tesla's competitive position + last 90 days)")
         print("-" * 50)
         
         # Single test with one query and one date range
-        query = "What did companies say about Tesla's sales guidance"
+        query = "What did companies say about Tesla's competitive position"
         date_range = "last_90_days"
         
         try:
             print(f"\n🔍 Open search for: '{query}' in {date_range}")
-            result = await bigdata_transcript_search.ainvoke({
+            result = await bigdata_filings_search.ainvoke({
                 "queries": [query],
                 "max_results": 5,
-                "transcript_types": ["EARNINGS_CALL"],
+                "filing_types": ["SEC_10_K", "SEC_10_Q"],
                 "date_range": date_range
                 # No entity_ids - let the query find Tesla mentions naturally
             })
             
-            print(f"✅ Found open search results for '{query}' in {date_range}")
-            
-            result_count = result.count("--- TRANSCRIPT RESULT") if "--- TRANSCRIPT RESULT" in result else 0
+            result_count = result.count("--- FILING RESULT") if "--- FILING RESULT" in result else 0
             first_title = self._extract_first_title(result)
             first_content = self._extract_first_content(result)
             
-            self.results.append(("similarity_only_date", f"'{query}' + {date_range}", "success", result_count, first_title, first_content))
+            if result_count > 0:
+                print(f"✅ Found {result_count} open search results for '{query}' in {date_range}")
+                self.results.append(("similarity_only_date", f"'{query}' + {date_range}", "success", result_count, first_title, first_content))
+            else:
+                print(f"❌ No open search results found for '{query}' in {date_range}")
+                self.results.append(("similarity_only_date", f"'{query}' + {date_range}", "error", 0, "N/A", "No results found"))
             
         except Exception as e:
             print(f"❌ Error with open search for '{query}' in {date_range}: {str(e)}")
@@ -313,7 +333,7 @@ class TranscriptSearchTester:
     def print_summary(self):
         """Print test summary with Rich tables."""
         print("\n" + "="*60)
-        print("🧪 TRANSCRIPT SEARCH TEST SUMMARY")
+        print("🧪 FILINGS SEARCH TEST SUMMARY")
         print("="*60)
         
         if RICH_AVAILABLE and self.console:
@@ -385,8 +405,8 @@ class TranscriptSearchTester:
             self.console.print(f"• Total tests: [bold]{total_tests}[/bold]")
             self.console.print(f"• Overall success rate: [bold green]{overall_success_rate:.1f}%[/bold green]")
             self.console.print(f"• Test Entity: [bold]{self.config.TEST_COMPANY_NAME}[/bold] ([cyan]{self.test_entity_id}[/cyan])")
-            self.console.print(f"• Focus: [italic]8 comprehensive test scenarios[/italic]")
-            self.console.print(f"• Rerank Threshold: [bold yellow]0.1[/bold yellow] (applied by default)")
+            self.console.print(f"• Focus: [italic]8 comprehensive SEC filings test scenarios[/italic]")
+            self.console.print(f"• Filing Types: [bold yellow]SEC_10_K, SEC_10_Q[/bold yellow] (annual & quarterly reports)")
             
         else:
             # Fallback to simple text output if Rich not available
@@ -407,8 +427,8 @@ class TranscriptSearchTester:
                 print(f"| {test_type} | {query_display} | {status_emoji} {status} | {result_count} | {title_display} | {content_display} |")
 
 async def main():
-    """Run all transcript search tests."""
-    print("🧪 Bigdata Transcript Search Tests - 8 Scenarios")
+    """Run all filings search tests."""
+    print("🧪 Bigdata Filings Search Tests - 8 Scenarios")
     print("=" * 60)
     
     # Check configuration
@@ -420,7 +440,7 @@ async def main():
         return
     
     # Initialize tester
-    tester = TranscriptSearchTester()
+    tester = FilingsSearchTester()
     
     # Run all 8 tests
     try:
@@ -428,7 +448,7 @@ async def main():
         await tester.test_2_entity_id_plus_fiscal_quarters()
         await tester.test_3_entity_id_plus_similarity()
         await tester.test_4_entity_id_plus_similarity_plus_fiscal_quarter()
-        await tester.test_5_entity_id_plus_similarity_plus_fiscal_quarter_plus_section()
+        await tester.test_5_entity_id_plus_similarity_plus_filing_type()
         await tester.test_6_reporting_entity_id_plus_similarity()
         await tester.test_7_similarity_only()
         await tester.test_8_similarity_only_plus_date_range()

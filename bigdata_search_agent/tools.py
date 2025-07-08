@@ -1,14 +1,97 @@
 """
-LangChain tool wrappers for Bigdata search utilities.
+LangChain Tool Wrappers for Bigdata.com API Integration
 
-This module provides @tool decorated functions that wrap the core search utilities
-for easy integration with LangChain agents and workflows.
+This module provides @tool decorated async functions that wrap the core Bigdata.com search utilities 
+for seamless integration with LangChain agents and workflows. Each tool corresponds to a major 
+Bigdata.com API endpoint and handles parameter validation, async execution, and result formatting.
+
+## Core Tools Available:
+
+### Content Search Tools:
+- **`bigdata_news_search`**: Premium news content from global publishers
+- **`bigdata_transcript_search`**: Corporate transcripts with section detection  
+- **`bigdata_filings_search`**: SEC filings and regulatory documents
+- **`bigdata_universal_search`**: Cross-document search with unified ranking
+
+### Discovery Tools:
+- **`bigdata_knowledge_graph`**: Company/source ID lookup and entity discovery
+
+## Tool Architecture Patterns:
+
+### Async Execution:
+All tools are fully async and designed for concurrent execution within the LangGraph workflow. 
+They wrap the underlying async utility functions from `utils.py` with LangChain tool decorators.
+
+### Parameter Handling:
+- **Type Safety**: All parameters are properly typed with Optional[] for flexibility
+- **Validation**: Tools handle parameter cleaning and validation internally
+- **Defaults**: Sensible defaults provided for most optional parameters
+- **Entity IDs**: Support for entity_ids filtering across content search tools
+
+### Result Formatting:
+- **Structured Output**: All tools return formatted strings ready for LLM consumption
+- **Consistent Format**: Standardized result structure across all tools
+- **Error Handling**: Graceful error handling with descriptive error messages
+- **Content Limits**: Raw content truncated to prevent token overflow
+
+### Filter Support:
+- **Date Ranges**: Rolling ("last_week") and absolute ("2024-01-01,2024-12-31") formats
+- **Entity Filtering**: Company entity IDs for targeted searches  
+- **Type Filtering**: Document types, filing types, transcript types, etc.
+- **Quality Filtering**: Rerank thresholds, source credibility ranks
+
+## Important Notes for Developers:
+
+**Tool Registration**: Tools are automatically registered via @tool decorator - they can be used 
+directly in LangChain agents or called programmatically from the graph workflow
+
+**Async Context**: All tools must be called with `await` - they're designed for the async 
+execution context of the LangGraph workflow
+
+**Error Resilience**: Tools catch and format exceptions as strings rather than raising them, 
+ensuring workflow continuity even when individual API calls fail
+
+**Result Size**: Tools limit content size to prevent token overflow in LLM contexts - 
+raw content is truncated at reasonable limits for different content types
+
+**Knowledge Graph Dependency**: Content search tools often require entity IDs from the 
+knowledge graph tool - this creates a natural workflow dependency
+
+## Extension Guidelines:
+
+### Adding New Tools:
+1. Create async utility function in `utils.py` 
+2. Add @tool decorated wrapper in this module
+3. Follow naming pattern: `bigdata_{tool_name}_search`
+4. Include comprehensive docstring with parameter descriptions
+5. Add tool to graph.py tool_map if needed for workflow integration
+
+### Parameter Extensions:
+- Add new parameters as Optional[] types for backward compatibility
+- Update parameter cleaning logic in graph.py `_clean_tool_parameters()`
+- Document parameter behavior in tool docstring
+
+### Result Format Changes:
+- Maintain backward compatibility with existing result structure
+- Consider LLM token limits when adding new content fields
+- Test result formatting with different content sizes
+
+## Integration with Main Workflow:
+
+Tools are called by the `execute_search_strategy` node in the main graph workflow. The workflow:
+1. Selects appropriate tool based on strategy type
+2. Prepares and validates parameters  
+3. Executes tool asynchronously
+4. Captures results and metadata for compilation
+
+Tool selection is handled via the `tool_map` dictionary in `graph.py` - add new tools there 
+for automatic workflow integration.
 """
 
 from typing import List, Optional, Dict, Any
 from langchain_core.tools import tool
 
-from bigdata_search.utils import (
+from .utils import (
     bigdata_news_search_async,
     bigdata_transcript_search_async,
     bigdata_filings_search_async,

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from test_config import TestConfig
-from bigdata_search.utils import bigdata_knowledge_graph_async, bigdata_news_search_async
+from bigdata_search_agent.utils import bigdata_knowledge_graph_async, bigdata_news_search_async
 
 async def main():
     """Debug news search issues."""

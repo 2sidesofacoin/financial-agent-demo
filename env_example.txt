@@ -1,3 +1,0 @@
-GOOGLE_API_KEY=<your google API key here>
-BIGDATA_USERNAME=<your bigdata username here>
-BIGDATA_PASSWORD=<your bigdata password here>
