@@ -57,6 +57,7 @@ class BigdataSearchConfiguration:
     # Workflow Configuration
     max_structured_output_retries: int = 3  # Maximum retries for structured output
     include_source_metadata: bool = True  # Whether to include detailed source metadata
+    debug_mode: bool = False  # Enable detailed debug output and parameter logging
     
     # Default tool preferences (can be overridden per workflow)
     default_tool_types: list[str] = None  # Default to auto-selection

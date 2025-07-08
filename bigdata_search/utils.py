@@ -383,9 +383,21 @@ async def bigdata_transcript_search_async(
                         "MANAGEMENT_DISCUSSION": SectionMetadata.MANAGEMENT_DISCUSSION,
                     }
                     
+                    # Build section query with OR operator (like entities)
+                    section_queries = []
                     for section in section_metadata:
                         if section in section_map:
-                            search_query = search_query & section_map[section]
+                            section_queries.append(section_map[section])
+                    
+                    if section_queries:
+                        section_query = section_queries[0]
+                        for additional_section in section_queries[1:]:
+                            section_query = section_query | additional_section
+                        
+                        if search_query is not None:
+                            search_query = search_query & section_query
+                        else:
+                            search_query = section_query
                 
                 # Add fiscal filters
                 if fiscal_year:

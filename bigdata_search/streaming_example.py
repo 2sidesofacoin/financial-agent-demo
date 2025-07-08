@@ -16,6 +16,7 @@ import os
 import time
 import logging
 import warnings
+import argparse
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -211,6 +212,33 @@ async def handle_custom_stream(chunk, monitor):
         )
         monitor.console.print(search_panel)
         
+    elif chunk_type == "final_parameters":
+        tool_type = chunk.get("tool_type", "unknown")
+        parameters = chunk.get("parameters", {})
+        
+        # Create a formatted parameter display
+        param_lines = []
+        for key, value in parameters.items():
+            if isinstance(value, list):
+                if len(value) <= 3:
+                    param_lines.append(f"    {key}: {value}")
+                else:
+                    param_lines.append(f"    {key}: [{len(value)} items]")
+            elif isinstance(value, str) and len(value) > 50:
+                param_lines.append(f"    {key}: {value[:50]}...")
+            else:
+                param_lines.append(f"    {key}: {value}")
+        
+        param_display = "\n".join(param_lines)
+        
+        parameter_panel = Panel(
+            f"Tool: {tool_type.upper()}\n\n{param_display}",
+            title="🔧 Final Tool Parameters",
+            border_style="blue",
+            padding=(0, 1)
+        )
+        monitor.console.print(parameter_panel)
+        
     elif chunk_type == "api_start":
         tool_type = chunk.get("tool_type", "unknown")
         monitor.update_search_status(tool_type, "🚀 API Call...")
@@ -254,6 +282,67 @@ async def handle_custom_stream(chunk, monitor):
         monitor.update_stage("gathering", "📊 Processing...")
         monitor.console.print(f"\n{message}", style="bold magenta")
         
+    elif chunk_type == "debug_mode_enabled":
+        debug_panel = Panel(
+            "🔧 Debug mode active - detailed tool parameters will be displayed",
+            title="🐛 Debug Mode",
+            border_style="cyan",
+            padding=(0, 1)
+        )
+        monitor.console.print(debug_panel)
+        
+    elif chunk_type == "debug_tool_parameters":
+        search_index = chunk.get("search_index", 0)
+        tool_type = chunk.get("tool_type", "unknown")
+        strategy_description = chunk.get("strategy_description", "No description")
+        search_queries = chunk.get("search_queries", [])
+        parameters = chunk.get("parameters", {})
+        success = chunk.get("success", False)
+        execution_time = chunk.get("execution_time", 0)
+        
+        # Format parameters for display
+        param_lines = []
+        for key, value in parameters.items():
+            if isinstance(value, list):
+                if len(value) <= 3:
+                    param_lines.append(f"    {key}: {value}")
+                else:
+                    param_lines.append(f"    {key}: [{len(value)} items: {', '.join(str(v) for v in value[:3])}...]")
+            elif isinstance(value, str) and len(value) > 60:
+                param_lines.append(f"    {key}: {value[:60]}...")
+            else:
+                param_lines.append(f"    {key}: {value}")
+        
+        # Format queries for display  
+        query_lines = []
+        for i, query in enumerate(search_queries, 1):
+            if len(query) > 80:
+                query_lines.append(f"    Query {i}: {query[:80]}...")
+            else:
+                query_lines.append(f"    Query {i}: {query}")
+        
+        status_icon = "✅" if success else "❌"
+        status_text = f"{status_icon} {tool_type.upper()} ({execution_time:.1f}s)"
+        
+        debug_content = f"""Search Strategy {search_index}:
+{strategy_description}
+
+Search Queries:
+{chr(10).join(query_lines)}
+
+Tool Parameters:
+{chr(10).join(param_lines)}
+
+Execution: {status_text}"""
+        
+        debug_parameter_panel = Panel(
+            debug_content,
+            title=f"🔧 Debug: {tool_type.upper()} Parameters",
+            border_style="blue",
+            padding=(0, 1)
+        )
+        monitor.console.print(debug_parameter_panel)
+        
     elif chunk_type == "success_analysis":
         monitor.console.print(f"  {message}", style="green")
         
@@ -292,10 +381,13 @@ async def handle_custom_stream(chunk, monitor):
         )
         monitor.console.print(completion_panel)
 
-async def main():
+async def main(debug_mode=False):
     """Run the interactive streaming workflow example."""
     
     console = Console()
+    
+    if debug_mode:
+        console.print("🐛 Debug mode enabled - detailed tool parameters will be shown", style="cyan")
     
     # Check if required environment variables are set
     if not os.environ.get("BIGDATA_USERNAME") or not os.environ.get("BIGDATA_PASSWORD"):
@@ -308,11 +400,12 @@ async def main():
         console.print("❌ Error: GOOGLE_API_KEY environment variable must be set for LLM functionality", style="bold red")
         return
     
+    
     monitor = StreamingProgressMonitor()
     monitor.print_header()
     
     # Define the search topic
-    search_topic = "Give me a detailed deep dive on Micron and how demand for memory is expected to change with the pace of AI"
+    search_topic = "Give me a deep dive on Tesla's potential revenue impact by the hikes in Copper Prices that Trump just announced"
     topic_panel = Panel(
         f"🎯 Research Topic: [bold cyan]{search_topic}[/bold cyan]",
         border_style="blue",
@@ -324,13 +417,14 @@ async def main():
     config = {
         "configurable": {
             "search_depth": 2,  # Generate 2 search strategies
-            "max_results_per_strategy": 5,  # 5 results per strategy
+            "max_results_per_strategy": 30,  # Use configuration default
             "number_of_queries": 2,  # 2 queries per strategy
             "bigdata_rate_limit_delay": 1.5,  # Be conservative with rate limits
             "planner_provider": "google_genai",
             "planner_model": "gemini-2.5-flash",
             "writer_provider": "google_genai", 
             "writer_model": "gemini-2.5-flash",
+            "debug_mode": debug_mode,  # Enable debug mode if requested
         }
     }
     
@@ -338,7 +432,7 @@ async def main():
     input_state = {
         "topic": search_topic,
         "search_depth": 2,
-        "max_results_per_strategy": 5,
+        "max_results_per_strategy": 20,
         "entity_preference": None,  # Can provide entity IDs if known
         "date_range": "last_90_days",  # Focus on recent information
     }
@@ -465,18 +559,33 @@ async def main():
 
 def run_streaming_example():
     """Synchronous wrapper for the async main function."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Run Bigdata search streaming workflow with real-time progress monitoring"
+    )
+    parser.add_argument(
+        "--debug", 
+        action="store_true",
+        help="Enable debug mode to show detailed tool parameters and execution info"
+    )
+    args = parser.parse_args()
+    
     console = Console()
+    
+    demo_title = "🎭 Demo Starting"
+    if args.debug:
+        demo_title += " (Debug Mode)"
     
     demo_panel = Panel(
         "🎬 Starting Rich Streaming Demo\n   Press Ctrl+C to interrupt...",
-        title="🎭 Demo Starting",
+        title=demo_title,
         border_style="bright_cyan",
         padding=(1, 2)
     )
     console.print(demo_panel)
     
     try:
-        asyncio.run(main())
+        asyncio.run(main(debug_mode=args.debug))
     except KeyboardInterrupt:
         interrupt_panel = Panel(
             "⏹️ Demo interrupted by user",

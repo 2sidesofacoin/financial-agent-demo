@@ -56,7 +56,7 @@ from bigdata_search import bigdata_search_graph
 # Execute comprehensive search workflow
 result = await bigdata_search_graph.ainvoke(
     {"topic": "Tesla Q4 2024 earnings results and outlook"},
-    config={"configurable": {"search_depth": 3, "max_results_per_strategy": 5}}
+    config={"configurable": {"search_depth": 3, "max_results_per_strategy": 30}}
 )
 
 print(result["final_results"])  # Synthesized research summary
@@ -430,6 +430,14 @@ async def execute_search_strategy(state: SearchStrategyState, config: RunnableCo
         "message": f"⏱️  Rate limit: {configurable.bigdata_rate_limit_delay}s between requests"
     })
     
+    # Stream complete final parameters before API call
+    writer({
+        "type": "final_parameters",
+        "tool_type": strategy.tool_type,
+        "parameters": tool_params,
+        "message": f"🔧 Final tool parameters: {tool_params}"
+    })
+    
     # Execute tool with timing
     writer({
         "type": "api_start",
@@ -583,6 +591,30 @@ async def gather_search_results(state: BigdataSearchState, config: RunnableConfi
         "success_rate": len(successful_searches) / len(completed_searches) * 100 if completed_searches else 0,
         "message": f"📈 Success rate: {len(successful_searches)}/{len(completed_searches)} ({len(successful_searches)/len(completed_searches)*100:.1f}%)"
     })
+    
+    # Debug mode: Stream detailed parameter information from completed searches
+    configurable = BigdataSearchConfiguration.from_runnable_config(config)
+    if configurable.debug_mode:
+        writer({
+            "type": "debug_mode_enabled", 
+            "message": "🔧 Debug mode enabled - showing detailed tool parameters"
+        })
+        
+        for i, search in enumerate(completed_searches, 1):
+            strategy = search.strategy
+            parameters = search.metadata.get("parameters_used", {})
+            
+            writer({
+                "type": "debug_tool_parameters",
+                "search_index": i,
+                "tool_type": strategy.tool_type,
+                "strategy_description": strategy.description,
+                "search_queries": strategy.search_queries,
+                "parameters": parameters,
+                "success": search.metadata.get("success", False),
+                "execution_time": search.metadata.get("execution_time", 0),
+                "message": f"🔍 Search {i}/{len(completed_searches)}: {strategy.tool_type.upper()}"
+            })
     
     # Stream individual search summaries
     for i, search in enumerate(completed_searches, 1):
